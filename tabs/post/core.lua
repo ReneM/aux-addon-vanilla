@@ -1,63 +1,52 @@
 module 'aux.tabs.post'
 
-local T = require 'T'
-local aux = require 'aux'
+include 'T'
+include 'aux'
+
 local info = require 'aux.util.info'
 local sort_util = require 'aux.util.sort'
 local persistence = require 'aux.util.persistence'
 local money = require 'aux.util.money'
+local cache = require 'aux.core.cache'
 local scan_util = require 'aux.util.scan'
 local post = require 'aux.core.post'
 local scan = require 'aux.core.scan'
 local history = require 'aux.core.history'
 local item_listing = require 'aux.gui.item_listing'
 local al = require 'aux.gui.auction_listing'
-local gui = require 'aux.gui'
 
-local tab = aux.tab 'Post'
+TAB 'Post'
 
-local settings_schema = {'tuple', '#', {duration='number'}, {start_price='number'}, {buyout_price='number'}, {hidden='boolean'}}
-
-local scan_id, inventory_records, bid_records, buyout_records = 0, {}, {}, {}
-
-M.DURATION_2, M.DURATION_8, M.DURATION_24 = 120, 480, 1440
-
-refresh = true
-
-selected_item = nil
+local DURATION_4, DURATION_8, DURATION_24 = 120, 480, 1440
+local settings_schema = {'tuple', '#', {stack_size='number'}, {duration='number'}, {start_price='number'}, {buyout_price='number'}, {hidden='boolean'}}
 
 function get_default_settings()
-	return T.map('duration', aux.account_data.post_duration, 'start_price', 0, 'buyout_price', 0, 'hidden', false)
+	return O('duration', DURATION_4 , 'stack_size', 1, 'start_price', 0, 'buyout_price', 0, 'hidden', false)
 end
 
-function aux.handle.LOAD2()
-	data = aux.faction_data.post
+do
+	local data
+	function get_data()
+		if not data then
+			local dataset = persistence.dataset
+			data = dataset.post or T
+			dataset.post = data
+		end
+		return data
+	end
 end
 
 function read_settings(item_key)
 	item_key = item_key or selected_item.key
-	return data[item_key] and persistence.read(settings_schema, data[item_key]) or get_default_settings()
+	return data[item_key] and persistence.read(settings_schema, data[item_key]) or default_settings
 end
+
 function write_settings(settings, item_key)
 	item_key = item_key or selected_item.key
 	data[item_key] = persistence.write(settings_schema, settings)
 end
 
-do
-	local bid_selections, buyout_selections = {}, {}
-	function get_bid_selection()
-		return bid_selections[selected_item.key]
-	end
-	function set_bid_selection(record)
-		bid_selections[selected_item.key] = record
-	end
-	function get_buyout_selection()
-		return buyout_selections[selected_item.key]
-	end
-	function set_buyout_selection(record)
-		buyout_selections[selected_item.key] = record
-	end
-end
+local scan_id, inventory_records, existing_auctions = 0, T, T
 
 function refresh_button_click()
 	scan.abort(scan_id)
@@ -65,43 +54,54 @@ function refresh_button_click()
 	refresh = true
 end
 
-function tab.OPEN()
+do
+	local item
+	function get_selected_item() return item end
+	function set_selected_item(v) item = v end
+end
+
+do
+	local c = 0
+	function get_refresh() return c end
+	function set_refresh(v) c = v end
+end
+
+function OPEN()
     frame:Show()
     update_inventory_records()
     refresh = true
 end
 
-function tab.CLOSE()
+function CLOSE()
     selected_item = nil
     frame:Hide()
 end
 
-function tab.USE_ITEM(item_info)
+function USE_ITEM(item_info)
 	select_item(item_info.item_key)
 end
 
 function get_unit_start_price()
-	return selected_item and read_settings().start_price or 0
+    local money_text = unit_start_price_input:GetText()
+    return money.from_string(money_text) or 0
 end
 
 function set_unit_start_price(amount)
-	local settings = read_settings()
-	settings.start_price = amount
-	write_settings(settings)
+    unit_start_price_input:SetText(money.to_string(amount, true, nil, 3, nil, true))
 end
 
 function get_unit_buyout_price()
-	return selected_item and read_settings().buyout_price or 0
+    local money_text = unit_buyout_price_input:GetText()
+    return money.from_string(money_text) or 0
 end
 
 function set_unit_buyout_price(amount)
-	local settings = read_settings()
-	settings.buyout_price = amount
-	write_settings(settings)
+    unit_buyout_price_input:SetText(money.to_string(amount, true, nil, 3, nil, true))
 end
 
 function update_inventory_listing()
-	local records = aux.values(aux.filter(aux.copy(inventory_records), function(record)
+	if not ACTIVE then return end
+	local records = values(filter(copy(inventory_records), function(record)
 		local settings = read_settings(record.key)
 		return record.aux_quantity > 0 and (not settings.hidden or show_hidden_checkbox:GetChecked())
 	end))
@@ -109,70 +109,81 @@ function update_inventory_listing()
 	item_listing.populate(inventory_listing, records)
 end
 
-function update_auction_listing(listing, records, reference)
-	local rows = T.acquire()
-	if selected_item then
-		local historical_value = history.value(selected_item.key)
-		local stack_size = stack_size_slider:GetValue()
-		for _, record in records[selected_item.key] or T.empty do
-			local price_color = undercut(record, stack_size_slider:GetValue(), listing == 'bid') < reference and aux.color.red
-			local price = record.unit_price * (listing == 'bid' and record.stack_size / stack_size_slider:GetValue() or 1)
-			tinsert(rows, T.map(
-				'cols', T.list(
-				T.map('value', record.own and aux.color.green(record.count) or record.count),
-				T.map('value', al.time_left(record.duration)),
-				T.map('value', record.stack_size == stack_size and aux.color.green(record.stack_size) or record.stack_size),
-				T.map('value', money.to_string(price, true, nil, price_color)),
-				T.map('value', historical_value and gui.percentage_historical(aux.round(price / historical_value * 100)) or '---')
-			),
-				'record', record
-			))
-		end
-		if historical_value then
-			tinsert(rows, T.map(
-				'cols', T.list(
-				T.map('value', '---'),
-				T.map('value', '---'),
-				T.map('value', '---'),
-				T.map('value', money.to_string(historical_value, true, nil, aux.color.green)),
-				T.map('value', historical_value and gui.percentage_historical(100) or '---')
-			),
-				'record', T.map('historical_value', true, 'stack_size', stack_size, 'unit_price', historical_value, 'own', true)
-			))
-		end
-		sort(rows, function(a, b)
-			return sort_util.multi_lt(
-				a.record.unit_price * (listing == 'bid' and a.record.stack_size or 1),
-				b.record.unit_price * (listing == 'bid' and b.record.stack_size or 1),
+function update_auction_listing()
+	if not ACTIVE then return end
+    local auction_rows = T
+    if selected_item then
+        local unit_start_price = get_unit_start_price()
+        local unit_buyout_price = get_unit_buyout_price()
 
-				a.record.historical_value and 1 or 0,
-				b.record.historical_value and 1 or 0,
+        for i, auction_record in ipairs(existing_auctions[selected_item.key] or empty) do
 
-				b.record.own and 0 or 1,
-				a.record.own and 0 or 1,
+            local blizzard_bid_undercut, buyout_price_undercut = undercut(auction_record, stack_size_slider:GetValue())
+            blizzard_bid_undercut = money.from_string(money.to_string(blizzard_bid_undercut, true, nil, 3))
+            buyout_price_undercut = money.from_string(money.to_string(buyout_price_undercut, true, nil, 3))
 
-				a.record.stack_size,
-				b.record.stack_size,
+            local stack_blizzard_bid_undercut, stack_buyout_price_undercut = undercut(auction_record, stack_size_slider:GetValue(), true)
+            stack_blizzard_bid_undercut = money.from_string(money.to_string(stack_blizzard_bid_undercut, true, nil, 3))
+            stack_buyout_price_undercut = money.from_string(money.to_string(stack_buyout_price_undercut, true, nil, 3))
 
-				a.record.duration,
-				b.record.duration
-			)
-		end)
-	end
-	if listing == 'bid' then
-		bid_listing:SetData(rows)
-	elseif listing == 'buyout' then
-		buyout_listing:SetData(rows)
-	end
-end
+            local stack_size = stack_size_slider:GetValue()
+            local historical_value = history.value(selected_item.key)
 
-function update_auction_listings()
-	update_auction_listing('bid', bid_records, get_unit_start_price())
-	update_auction_listing('buyout', buyout_records, get_unit_buyout_price())
+            local bid_color
+            if blizzard_bid_undercut < unit_start_price and stack_blizzard_bid_undercut < unit_start_price then
+                bid_color = color.red
+            elseif blizzard_bid_undercut < unit_start_price then
+                bid_color = color.orange
+            elseif stack_blizzard_bid_undercut < unit_start_price then
+                bid_color = color.yellow
+            end
+
+            local buyout_color
+            if buyout_price_undercut < unit_buyout_price and stack_buyout_price_undercut < unit_buyout_price then
+                buyout_color = color.red
+            elseif buyout_price_undercut < unit_buyout_price then
+                buyout_color = color.orange
+            elseif stack_buyout_price_undercut < unit_buyout_price then
+                buyout_color = color.yellow
+            end
+
+            tinsert(auction_rows, O(
+                'cols', A(
+                    O('value', auction_record.own and color.yellow(auction_record.count) or auction_record.count),
+		            O('value', al.time_left(auction_record.duration)),
+		            O('value', auction_record.stack_size == stack_size and color.yellow(auction_record.stack_size) or auction_record.stack_size),
+		            O('value', money.to_string(auction_record.unit_blizzard_bid, true, nil, 3, bid_color)),
+		            O('value', historical_value and al.percentage_historical(round(auction_record.unit_blizzard_bid / historical_value * 100)) or '---'),
+		            O('value', auction_record.unit_buyout_price > 0 and money.to_string(auction_record.unit_buyout_price, true, nil, 3, buyout_color) or '---'),
+		            O('value', auction_record.unit_buyout_price > 0 and historical_value and al.percentage_historical(round(auction_record.unit_buyout_price / historical_value * 100)) or '---')
+                ),
+                'record', auction_record
+            ))
+        end
+        sort(auction_rows, function(a, b)
+            return sort_util.multi_lt(
+                    a.record.unit_buyout_price == 0 and huge or a.record.unit_buyout_price,
+	                b.record.unit_buyout_price == 0 and huge or b.record.unit_buyout_price,
+
+                    a.record.unit_blizzard_bid,
+	                b.record.unit_blizzard_bid,
+
+                    a.record.stack_size,
+	                b.record.stack_size,
+
+                    b.record.own and 1 or 0,
+	                a.record.own and 1 or 0,
+
+                    a.record.duration,
+                    b.record.duration
+            )
+        end)
+    end
+    auction_listing:SetData(auction_rows)
 end
 
 function M.select_item(item_key)
-    for _, inventory_record in aux.filter(aux.copy(inventory_records), function(record) return record.aux_quantity > 0 end) do
+    for _, inventory_record in filter(copy(inventory_records), function(record) return record.aux_quantity > 0 end) do
         if inventory_record.key == item_key then
             update_item(inventory_record)
             return
@@ -182,17 +193,19 @@ end
 
 function price_update()
     if selected_item then
+        local settings = read_settings()
+
+        local start_price_input = get_unit_start_price()
+        settings.start_price = start_price_input
         local historical_value = history.value(selected_item.key)
-        if get_bid_selection() or get_buyout_selection() then
-	        set_unit_start_price(undercut(get_bid_selection() or get_buyout_selection(), stack_size_slider:GetValue(), get_bid_selection()))
-	        unit_start_price_input:SetText(money.to_string(get_unit_start_price(), true, nil, nil, true))
-        end
-        if get_buyout_selection() then
-	        set_unit_buyout_price(undercut(get_buyout_selection(), stack_size_slider:GetValue()))
-	        unit_buyout_price_input:SetText(money.to_string(get_unit_buyout_price(), true, nil, nil, true))
-        end
-        start_price_percentage:SetText(historical_value and gui.percentage_historical(aux.round(get_unit_start_price() / historical_value * 100)) or '---')
-        buyout_price_percentage:SetText(historical_value and gui.percentage_historical(aux.round(get_unit_buyout_price() / historical_value * 100)) or '---')
+        start_price_percentage:SetText(historical_value and al.percentage_historical(round(start_price_input / historical_value * 100)) or '---')
+
+        local buyout_price_input = get_unit_buyout_price()
+        settings.buyout_price = buyout_price_input
+        local historical_value = history.value(selected_item.key)
+        buyout_price_percentage:SetText(historical_value and al.percentage_historical(round(buyout_price_input / historical_value * 100)) or '---')
+
+        write_settings(settings)
     end
 end
 
@@ -207,7 +220,7 @@ function post_auctions()
 		local key = selected_item.key
 
         local duration_code
-		if duration == DURATION_2 then
+		if duration == DURATION_4 then
             duration_code = 2
 		elseif duration == DURATION_8 then
             duration_code = 3
@@ -223,24 +236,16 @@ function post_auctions()
             unit_buyout_price,
 			stack_count,
 			function(posted)
-				if not frame:IsShown() then
-					return
-				end
 				for i = 1, posted do
-                    record_auction(key, stack_size, unit_start_price * stack_size, unit_buyout_price, duration_code, UnitName'player')
+                    record_auction(key, stack_size, unit_start_price, unit_buyout_price, duration_code, UnitName'player')
                 end
                 update_inventory_records()
-				local same
+                selected_item = nil
                 for _, record in inventory_records do
                     if record.key == key then
-	                    same = record
+                        update_item(record)
 	                    break
                     end
-                end
-                if same then
-	                update_item(same)
-                else
-                    selected_item = nil
                 end
                 refresh = true
 			end
@@ -274,7 +279,7 @@ function update_item_configuration()
 
         item.texture:SetTexture(nil)
         item.count:SetText()
-        item.name:SetTextColor(aux.color.label.enabled())
+        item.name:SetTextColor(color.label.enabled())
         item.name:SetText('No item selected')
 
         unit_start_price_input:Hide()
@@ -283,6 +288,7 @@ function update_item_configuration()
         stack_count_slider:Hide()
         deposit:Hide()
         duration_dropdown:Hide()
+        historical_value_button:Hide()
         hide_checkbox:Hide()
     else
 		unit_start_price_input:Show()
@@ -291,6 +297,7 @@ function update_item_configuration()
         stack_count_slider:Show()
         deposit:Show()
         duration_dropdown:Show()
+        historical_value_button:Show()
         hide_checkbox:Show()
 
         item.texture:SetTexture(selected_item.texture)
@@ -309,11 +316,10 @@ function update_item_configuration()
         stack_count_slider.editbox:SetNumber(stack_count_slider:GetValue())
 
         do
-            local deposit_factor = UnitFactionGroup'npc' and .05 or .25
-            local duration_factor = UIDropDownMenu_GetSelectedValue(duration_dropdown) / 120
-            local stack_size, stack_count = selected_item.max_charges and 1 or stack_size_slider:GetValue(), stack_count_slider:GetValue()
-            local amount = floor(selected_item.unit_vendor_price * deposit_factor * stack_size) * stack_count * duration_factor
-            deposit:SetText('Deposit: ' .. money.to_string(amount, nil, nil, aux.color.text.enabled))
+            local deposit_factor = neutral_faction() and .25 or .05
+            local stack_size, stack_count = stack_size_slider:GetValue(), stack_count_slider:GetValue()
+            local amount = floor(selected_item.unit_vendor_price * deposit_factor * (selected_item.max_charges and 1 or stack_size)) * stack_count * UIDropDownMenu_GetSelectedValue(duration_dropdown) / 120
+            deposit:SetText('Deposit: ' .. money.to_string(amount, nil, nil, nil, color.text.enabled))
         end
 
         refresh_button:Enable()
@@ -321,18 +327,20 @@ function update_item_configuration()
 end
 
 function undercut(record, stack_size, stack)
-    local price = ceil(record.unit_price * (stack and record.stack_size or stack_size))
+    local start_price = round(record.unit_blizzard_bid * (stack and record.stack_size or stack_size))
+    local buyout_price = round(record.unit_buyout_price * (stack and record.stack_size or stack_size))
     if not record.own then
-	    price = price - 1
+        start_price = max(0, start_price - 1)
+        buyout_price = max(0, buyout_price - 1)
     end
-    return price / stack_size
+    return start_price / stack_size, buyout_price / stack_size
 end
 
-function quantity_update(maximize_count)
+function quantity_update(max_count)
     if selected_item then
         local max_stack_count = selected_item.max_charges and selected_item.availability[stack_size_slider:GetValue()] or floor(selected_item.availability[0] / stack_size_slider:GetValue())
         stack_count_slider:SetMinMaxValues(1, max_stack_count)
-        if maximize_count then
+        if max_count then
             stack_count_slider:SetValue(max_stack_count)
         end
     end
@@ -340,15 +348,15 @@ function quantity_update(maximize_count)
 end
 
 function unit_vendor_price(item_key)
-    for slot in info.inventory() do
-	    T.temp(slot)
-        local item_info = T.temp-info.container_item(unpack(slot))
+    for slot in info.inventory do
+	    temp(slot)
+        local item_info = temp-info.container_item(unpack(slot))
         if item_info and item_info.item_key == item_key then
-            if info.auctionable(item_info.tooltip, nil, true) and not item_info.lootable then
+            if info.auctionable(item_info.tooltip, nil, item_info.lootable) then
                 ClearCursor()
                 PickupContainerItem(unpack(slot))
                 ClickAuctionSellItemButton()
-                local auction_sell_item = T.temp-info.auction_sell_item()
+                local auction_sell_item = temp-info.auction_sell_item()
                 ClearCursor()
                 ClickAuctionSellItemButton()
                 ClearCursor()
@@ -360,12 +368,99 @@ function unit_vendor_price(item_key)
     end
 end
 
+function update_historical_value_button()
+    if selected_item then
+        local historical_value = history.value(selected_item.key)
+
+        local adaminoMaxPrice = get_adamino_max_value(selected_item.key)
+        -- SendChatMessage("Adamino max value: " .. adaminoMaxPrice ,"SAY" ,"COMMON");
+        
+        -- historical_value_button.amount = historical_value
+        historical_value_button.amount = adaminoMaxPrice
+        historical_value_button:SetText(adaminoMaxPrice and money.to_string(adaminoMaxPrice, true, nil, 3) or '---')
+    end
+end
+
+function get_adamino_max_value()
+
+    local commonMultipler = 4.44
+    local uncommonMultipler = 11
+    local rareMultipler = 22.22
+    local epicMultiplier = 40
+    local recipesMultipler = 8.88
+    local tradeGoodsMultipler = 8.88
+    local miscMultipler = 8.88
+
+    local vendor_price = selected_item.unit_vendor_price
+    local item = info.item(selected_item.key)
+
+    local item_qual = item.quality
+    local item_class = item.class
+    local item_sub_class = item.subclass
+
+    -- SendChatMessage("Item: " .. serializeTable(item) ,"SAY" ,"COMMON");
+    -- SendChatMessage("Item qual: " .. item_qual ,"SAY" ,"COMMON");
+    -- SendChatMessage("Item class: " .. item_class ,"SAY" ,"COMMON");
+    -- SendChatMessage("Item subclass: " .. item_sub_class ,"SAY" ,"COMMON");
+    -- SendChatMessage("Vendor price: " .. vendor_price ,"SAY" ,"COMMON");
+
+    local value
+
+    if vendor_price and vendor_price > 0 then
+        if item_qual == 1 then value = vendor_price * commonMultipler
+        elseif item_qual == 4 then value = vendor_price * epicMultiplier
+        elseif item_class == "Recipe" then value = vendor_price * recipesMultipler
+        elseif item_class == "Trade Goods"  then value = vendor_price * tradeGoodsMultipler
+        elseif item_class == "Reagent"  then value = vendor_price * tradeGoodsMultipler
+        elseif item_sub_class == "Miscellaneous" then value = vendor_price * miscMultipler
+        elseif item_qual == 2 then value = vendor_price * uncommonMultipler
+        elseif item_qual == 3 then value = vendor_price * rareMultipler        
+        end
+    else
+        value = history.market_value(selected_item.key)        
+    end
+
+    if value and value > 0 then
+        return value - 0.001
+    end
+end
+
+function serializeTable(val, name, skipnewlines, depth)
+    skipnewlines = skipnewlines or false
+    depth = depth or 0
+
+    local tmp = string.rep(" ", depth)
+
+    if name then tmp = tmp .. name .. " = " end
+
+    if type(val) == "table" then
+        tmp = tmp .. "{" .. (not skipnewlines and "\n" or "")
+
+        for k, v in pairs(val) do
+            tmp =  tmp .. serializeTable(v, k, skipnewlines, depth + 1) .. "," .. (not skipnewlines and "\n" or "")
+        end
+
+        tmp = tmp .. string.rep(" ", depth) .. "}"
+    elseif type(val) == "number" then
+        tmp = tmp .. tostring(val)
+    elseif type(val) == "string" then
+        tmp = tmp .. string.format("%q", val)
+    elseif type(val) == "boolean" then
+        tmp = tmp .. (val and "true" or "false")
+    else
+        tmp = tmp .. "\"[inserializeable datatype:" .. type(val) .. "]\""
+    end
+
+    return tmp
+end
+
+
 function update_item(item)
     local settings = read_settings(item.key)
 
     item.unit_vendor_price = unit_vendor_price(item.key)
     if not item.unit_vendor_price then
-        settings.hidden = true
+        settings.hidden = 1
         write_settings(settings, item.key)
         refresh = true
         return
@@ -375,51 +470,41 @@ function update_item(item)
 
     selected_item = item
 
-    UIDropDownMenu_Initialize(duration_dropdown, initialize_duration_dropdown)
+    UIDropDownMenu_Initialize(duration_dropdown, initialize_duration_dropdown) -- TODO, wtf, why is this needed
     UIDropDownMenu_SetSelectedValue(duration_dropdown, settings.duration)
 
     hide_checkbox:SetChecked(settings.hidden)
 
-    if selected_item.max_charges then
-	    for i = selected_item.max_charges, 1, -1 do
-			if selected_item.availability[i] > 0 then
-				stack_size_slider:SetMinMaxValues(1, i)
-				break
-			end
-	    end
-    else
-	    stack_size_slider:SetMinMaxValues(1, min(selected_item.max_stack, selected_item.aux_quantity))
-    end
-    stack_size_slider:SetValue(aux.huge)
+    stack_size_slider:SetMinMaxValues(1, selected_item.max_charges or selected_item.max_stack)
+    stack_size_slider:SetValue(settings.stack_size)
     quantity_update(true)
 
-    unit_start_price_input:SetText(money.to_string(settings.start_price, true, nil, nil, true))
-    unit_buyout_price_input:SetText(money.to_string(settings.buyout_price, true, nil, nil, true))
+    unit_start_price_input:SetText(money.to_string(settings.start_price, true, nil, 3, nil, true))
+    unit_buyout_price_input:SetText(money.to_string(settings.buyout_price, true, nil, 3, nil, true))
 
-    if not bid_records[selected_item.key] then
+    if not existing_auctions[selected_item.key] then
         refresh_entries()
     end
 
     write_settings(settings, item.key)
-
     refresh = true
 end
 
 function update_inventory_records()
-    local auctionable_map = T.temp-T.acquire()
-    for slot in info.inventory() do
-	    T.temp(slot)
-	    local item_info = T.temp-info.container_item(unpack(slot))
+    local auctionable_map = temp-T
+    for slot in info.inventory do
+	    temp(slot)
+	    local item_info = temp-info.container_item(unpack(slot))
         if item_info then
             local charge_class = item_info.charges or 0
-            if info.auctionable(item_info.tooltip, nil, true) and not item_info.lootable then
+            if info.auctionable(item_info.tooltip, nil, item_info.lootable) then
                 if not auctionable_map[item_info.item_key] then
-                    local availability = T.acquire()
+                    local availability = T
                     for i = 0, 10 do
                         availability[i] = 0
                     end
                     availability[charge_class] = item_info.count
-                    auctionable_map[item_info.item_key] = T.map(
+                    auctionable_map[item_info.item_key] = O(
 	                    'item_id', item_info.item_id,
 	                    'suffix_id', item_info.suffix_id,
 	                    'key', item_info.item_key,
@@ -440,27 +525,26 @@ function update_inventory_records()
             end
         end
     end
-    T.release(inventory_records)
-    inventory_records = aux.values(auctionable_map)
+    release(inventory_records)
+    inventory_records = values(auctionable_map)
     refresh = true
 end
 
 function refresh_entries()
 	if selected_item then
-        local item_key = selected_item.key
-		set_bid_selection()
-        set_buyout_selection()
-        bid_records[item_key], buyout_records[item_key] = nil, nil
-        local query = scan_util.item_query(selected_item.item_id)
-        status_bar:update_status(0, 0)
+		local item_id, suffix_id = selected_item.item_id, selected_item.suffix_id
+        local item_key = item_id .. ':' .. suffix_id
+        existing_auctions[item_key] = nil
+        local query = scan_util.item_query(item_id)
+        status_bar:update_status(0,0)
         status_bar:set_text('Scanning auctions...')
 
 		scan_id = scan.start{
             type = 'list',
             ignore_owner = true,
-			queries = T.list(query),
+			queries = A(query),
 			on_page_loaded = function(page, total_pages)
-                status_bar:update_status(page / total_pages, 0) -- TODO
+                status_bar:update_status((page - 1) / total_pages, 0) -- TODO
                 status_bar:set_text(format('Scanning Page %d / %d', page, total_pages))
 			end,
 			on_auction = function(auction_record)
@@ -476,13 +560,13 @@ function refresh_entries()
 				end
 			end,
 			on_abort = function()
-				bid_records[item_key], buyout_records[item_key] = nil, nil
+				existing_auctions[item_key] = nil
+                update_historical_value_button()
                 status_bar:update_status(1, 1)
                 status_bar:set_text('Scan aborted')
 			end,
 			on_complete = function()
-				bid_records[item_key] = bid_records[item_key] or T.acquire()
-				buyout_records[item_key] = buyout_records[item_key] or T.acquire()
+				existing_auctions[item_key] = existing_auctions[item_key] or T
                 refresh = true
                 status_bar:update_status(1, 1)
                 status_bar:set_text('Scan complete')
@@ -492,44 +576,29 @@ function refresh_entries()
 end
 
 function record_auction(key, aux_quantity, unit_blizzard_bid, unit_buyout_price, duration, owner)
-    bid_records[key] = bid_records[key] or T.acquire()
-    do
-	    local entry
-	    for _, record in bid_records[key] do
-	        if unit_blizzard_bid == record.unit_price and aux_quantity == record.stack_size and duration == record.duration and info.is_player(owner) == record.own then
-	            entry = record
-	        end
-	    end
-	    if not entry then
-	        entry = T.map('stack_size', aux_quantity, 'unit_price', unit_blizzard_bid, 'duration', duration, 'own', info.is_player(owner), 'count', 0)
-	        tinsert(bid_records[key], entry)
-	    end
-	    entry.count = entry.count + 1
+    existing_auctions[key] = existing_auctions[key] or T
+    local entry
+    for _, record in existing_auctions[key] do
+        if unit_blizzard_bid == record.unit_blizzard_bid and unit_buyout_price == record.unit_buyout_price and aux_quantity == record.stack_size and duration == record.duration and is_player(owner) == record.own then
+            entry = record
+        end
     end
-    buyout_records[key] = buyout_records[key] or T.acquire()
-    if unit_buyout_price == 0 then return end
-    do
-	    local entry
-	    for _, record in buyout_records[key] do
-		    if unit_buyout_price == record.unit_price and aux_quantity == record.stack_size and duration == record.duration and info.is_player(owner) == record.own then
-			    entry = record
-		    end
-	    end
-	    if not entry then
-		    entry = T.map('stack_size', aux_quantity, 'unit_price', unit_buyout_price, 'duration', duration, 'own', info.is_player(owner), 'count', 0)
-		    tinsert(buyout_records[key], entry)
-	    end
-	    entry.count = entry.count + 1
+    if not entry then
+        entry = O('stack_size', aux_quantity, 'unit_blizzard_bid', unit_blizzard_bid, 'unit_buyout_price', unit_buyout_price, 'duration', duration, 'own', is_player(owner), 'count', 0)
+        tinsert(existing_auctions[key], entry)
     end
+    entry.count = entry.count + 1
+    return entry
 end
 
 function on_update()
     if refresh then
         refresh = false
         price_update()
+        update_historical_value_button()
         update_item_configuration()
         update_inventory_listing()
-        update_auction_listings()
+        update_auction_listing()
     end
     validate_parameters()
 end
@@ -544,7 +613,7 @@ function initialize_duration_dropdown()
     end
     UIDropDownMenu_AddButton{
         text = '2 Hours',
-        value = DURATION_2,
+        value = DURATION_4,
         func = on_click,
     }
     UIDropDownMenu_AddButton{

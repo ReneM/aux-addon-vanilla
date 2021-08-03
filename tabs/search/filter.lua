@@ -1,20 +1,19 @@
 module 'aux.tabs.search'
 
-local T = require 'T'
-local aux = require 'aux'
 local info = require 'aux.util.info'
 local money = require 'aux.util.money'
+local cache = require 'aux.core.cache'
 local filter_util = require 'aux.util.filter'
 
-local post_filter = {}
+local post_filter = T
 local post_filter_index = 0
 
 function valid_level(str)
 	local level = tonumber(str)
-	return level and aux.bounded(1, 60, level)
+	return level and bounded(1, 60, level)
 end
 
-blizzard_query = setmetatable(T.acquire(), {
+blizzard_query = setmetatable(T, {
 	__index = function(_, key)
 		if key == 'name' then
 			return name_input:GetText()
@@ -81,25 +80,28 @@ function update_form()
 	end
 
 	if blizzard_query.exact then
-		usable_checkbox:Disable()
-		for key in T.temp-T.set('min_level', 'max_level') do
-			_M[key .. '_input']:EnableMouse(false)
-			_M[key .. '_input']:ClearFocus()
-		end
-		for key in T.temp-T.set('class', 'subclass', 'slot', 'quality') do
+		for key in temp-S('class', 'subclass', 'slot', 'quality') do
 			_M[key .. '_dropdown'].button:Disable()
 		end
-		CloseDropDownMenus()
 	else
-		usable_checkbox:Enable()
-		for key in T.temp-T.set('min_level', 'max_level') do
-			_M[key .. '_input']:EnableMouse(true)
-		end
 		class_dropdown.button:Enable()
 		quality_dropdown.button:Enable()
 	end
+	for key in temp-S('min_level', 'max_level') do
+		if blizzard_query.exact then
+			_M[key .. '_input']:EnableMouse(false)
+			_M[key .. '_input']:ClearFocus()
+		else
+			_M[key .. '_input']:EnableMouse(true)
+		end
+	end
+	if blizzard_query.exact then
+		usable_checkbox:Disable()
+	else
+		usable_checkbox:Enable()
+	end
 
-	if aux.any(T.temp-T.list('min_level', 'max_level', 'usable', 'class', 'subclass', 'slot', 'quality'), function(key) return blizzard_query[key] end) then
+	if any(temp-A('min_level', 'max_level', 'usable', 'class', 'subclass', 'slot', 'quality'), function(key) return blizzard_query[key] end) then
 		exact_checkbox:Disable()
 	else
 		exact_checkbox:Enable()
@@ -116,7 +118,7 @@ function get_filter_builder_query()
 	end
 
 	local name = blizzard_query.name
-	if not aux.index(filter_util.parse_filter_string(name), 'blizzard', 'name') then
+	if not index(filter_util.parse_filter_string(name), 'blizzard', 'name') then
 		name = filter_util.quote(name)
 	end
 	add((name ~= '' or blizzard_query.exact) and name)
@@ -126,17 +128,17 @@ function get_filter_builder_query()
 	add(blizzard_query.max_level)
 	add(blizzard_query.usable and 'usable')
 
-	local classes = T.temp-T.list(GetAuctionItemClasses())
+	local classes = temp-A(GetAuctionItemClasses())
 	if blizzard_query.class and blizzard_query.class > 0 then
 		add(strlower(classes[blizzard_query.class]))
 	end
-	local subclasses = T.temp-T.list(GetAuctionItemSubClasses(blizzard_query.class or 0))
+	local subclasses = temp-A(GetAuctionItemSubClasses(blizzard_query.class or 0))
 	if blizzard_query.subclass and blizzard_query.subclass > 0 then
 		add(strlower(subclasses[blizzard_query.subclass]))
 	end
 	local slot_index = blizzard_query.slot
 	if slot_index then
-		local slots = T.temp-T.list(GetAuctionInvTypes(blizzard_query.class or 0, blizzard_query.subclass or 0))
+		local slots = temp-A(GetAuctionInvTypes(blizzard_query.class or 0, blizzard_query.subclass or 0))
 		add(strlower(_G[slots[slot_index]]))
 	end
 
@@ -177,40 +179,39 @@ function clear_form()
 	UIDropDownMenu_ClearAll(slot_dropdown)
 	UIDropDownMenu_ClearAll(quality_dropdown)
 	filter_parameter_input:ClearFocus()
-	T.wipe(post_filter)
+	wipe(post_filter)
 	post_filter_index = 0
 	update_filter_display()
 end
 
 function import_filter_string()
-	local filter, error = filter_util.parse_filter_string(aux.select(3, strfind(search_box:GetText(), '^([^;]*)')))
-	if filter or aux.print(error) then
+	local filter, error = filter_util.parse_filter_string(select(3, strfind(search_box:GetText(), '^([^;]*)')))
+	if filter or print(error) then
 		set_form(filter)
 	end
-	update_form()
 end
 
 function export_filter_string()
-	set_filter(get_filter_builder_query())
+	search_box:SetText(get_filter_builder_query())
+	filter_parameter_input:ClearFocus()
 end
 
 function formatted_post_filter(components)
 	local no_line_break
-	local stack = T.temp-T.acquire()
+	local stack = temp-T
 	local str = ''
 
 	for i, component in ipairs(components) do
-		local component = components[i]
 		if no_line_break then
 			str = str .. ' '
 		end
 		str = str .. '</p><p>'
 		for _ = 1, getn(stack) + 1 do
-			str = str .. aux.color.content.background'----'
+			str = str .. color.content.background('----')
 		end
 		no_line_break = component[1] == 'operator' and component[2] == 'not'
 
-		local filter_color = (post_filter_index == i and aux.color.gold or aux.color.orange)
+		local filter_color = (post_filter_index == i and color.gold or color.orange)
 		local component_text = filter_color(component[2])
 		if component[1] == 'operator' and component[2] ~= 'not' then
 			component_text = component_text .. filter_color(tonumber(component[3]) or '')
@@ -219,7 +220,7 @@ function formatted_post_filter(components)
 			local parameter = component[3]
 			if parameter then
 				if component[2] == 'item' then
-					parameter = info.display_name(info.item_id(parameter)) or '[' .. parameter .. ']'
+					parameter = info.display_name(cache.item_id(parameter)) or '[' .. parameter .. ']'
 				elseif filter_util.filters[component[2]].input_type == 'money' then
 					parameter = money.to_string(money.from_string(parameter), nil, true)
 				end
@@ -283,7 +284,7 @@ function add_form_component()
 			filter_input:HighlightText()
 			filter_input:SetFocus()
 		elseif error then
-			aux.print(error)
+			print(error)
 		end
 	end
 end
@@ -318,18 +319,18 @@ function set_filter_display_offset(x_offset, y_offset)
 	local x_upper_bound = 0
 	local y_lower_bound = 0
 	local y_upper_bound = max(0, height - scroll_frame:GetHeight())
-	scroll_frame:SetHorizontalScroll(aux.bounded(x_lower_bound, x_upper_bound, x_offset))
-	scroll_frame:SetVerticalScroll(aux.bounded(y_lower_bound, y_upper_bound, y_offset))
+	scroll_frame:SetHorizontalScroll(bounded(x_lower_bound, x_upper_bound, x_offset))
+	scroll_frame:SetVerticalScroll(bounded(y_lower_bound, y_upper_bound, y_offset))
 end
 
 function initialize_filter_dropdown()
-	for _, filter in ipairs(T.temp-T.list('and', 'or', 'not', 'price', 'profit', 'vendor-profit', 'disenchant-profit', 'percent', 'bid-price', 'bid-profit', 'bid-vendor-profit', 'bid-disenchant-profit', 'bid-percent', 'item', 'tooltip', 'min-level', 'max-level', 'rarity', 'left', 'utilizable', 'seller')) do
-		UIDropDownMenu_AddButton(T.map(
+	for _, filter in ipairs(temp-A('and', 'or', 'not', 'min-unit-bid', 'min-unit-buy', 'max-unit-bid', 'max-unit-buy', 'bid-profit', 'buy-profit', 'bid-vend-profit', 'buy-vend-profit', 'bid-dis-profit', 'buy-dis-profit', 'bid-pct', 'buy-pct', 'item', 'tooltip', 'min-lvl', 'max-lvl', 'rarity', 'left', 'utilizable', 'discard')) do
+		UIDropDownMenu_AddButton(O(
 			'text', filter,
 			'value', filter,
 			'func', function()
 				filter_input:SetText(this.value)
-				if aux.index(filter_util.filters[this.value], 'input_type') == '' or this.value == 'not' then
+				if index(filter_util.filters[this.value], 'input_type') == '' or this.value == 'not' then
 					add_form_component()
 				elseif filter_util.filters[this.value] then
 					filter_parameter_input:Show()
@@ -353,9 +354,9 @@ function initialize_class_dropdown()
 			update_form()
 		end
 	end
-	UIDropDownMenu_AddButton(T.map('text', ALL, 'value', 0, 'func', on_click))
-	for i, class in ipairs(T.temp-T.list(GetAuctionItemClasses())) do
-		UIDropDownMenu_AddButton(T.map('text', class, 'value', i, 'func', on_click))
+	UIDropDownMenu_AddButton(O('text', ALL, 'value', 0, 'func', on_click))
+	for i, class in ipairs(temp-A(GetAuctionItemClasses())) do
+		UIDropDownMenu_AddButton(O('text', class, 'value', i, 'func', on_click))
 	end
 end
 
@@ -366,9 +367,9 @@ function initialize_subclass_dropdown()
 			update_form()
 		end
 	end
-	UIDropDownMenu_AddButton(T.map('text', ALL, 'value', 0, 'func', on_click))
-	for i, subclass in ipairs(T.temp-T.list(GetAuctionItemSubClasses(blizzard_query.class or 0))) do
-		UIDropDownMenu_AddButton(T.map('text', subclass, 'value', i, 'func', on_click))
+	UIDropDownMenu_AddButton(O('text', ALL, 'value', 0, 'func', on_click))
+	for i, subclass in ipairs(temp-A(GetAuctionItemSubClasses(blizzard_query.class or 0))) do
+		UIDropDownMenu_AddButton(O('text', subclass, 'value', i, 'func', on_click))
 	end
 end
 
@@ -377,9 +378,9 @@ function initialize_slot_dropdown()
 		UIDropDownMenu_SetSelectedValue(slot_dropdown, this.value)
 		update_form()
 	end
-	UIDropDownMenu_AddButton(T.map('text', ALL, 'value', 0, 'func', on_click))
-	for i, slot in ipairs(T.temp-T.list(GetAuctionInvTypes(blizzard_query.class == 2 and 2 or 0, blizzard_query.subclass or 0))) do
-		UIDropDownMenu_AddButton(T.map('text', _G[slot], 'value', i, 'func', on_click))
+	UIDropDownMenu_AddButton(O('text', ALL, 'value', '', 'func', on_click))
+	for i, slot in ipairs(temp-A(GetAuctionInvTypes(blizzard_query.class == 2 and 2 or 0, blizzard_query.subclass or 0))) do
+		UIDropDownMenu_AddButton(O('text', _G[slot], 'value', i, 'func', on_click))
 	end
 end
 
@@ -388,8 +389,8 @@ function initialize_quality_dropdown()
 		UIDropDownMenu_SetSelectedValue(quality_dropdown, this.value)
 		update_form()
 	end
-	UIDropDownMenu_AddButton(T.map('text', ALL, 'value', -1, 'func', on_click))
+	UIDropDownMenu_AddButton(O('text', ALL, 'value', -1, 'func', on_click))
 	for i = 0, 4 do
-		UIDropDownMenu_AddButton(T.map('text', _G['ITEM_QUALITY' .. i .. '_DESC'], 'value', i, 'func', on_click))
+		UIDropDownMenu_AddButton(O('text', _G['ITEM_QUALITY' .. i .. '_DESC'], 'value', i, 'func', on_click))
 	end
 end

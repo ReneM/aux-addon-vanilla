@@ -1,7 +1,21 @@
 module 'aux.util.persistence'
 
-local T = require 'T'
-local aux = require 'aux'
+include 'T'
+include 'aux'
+
+_G.aux_datasets = T
+
+do
+	local dataset
+	function M.get_dataset()
+		if not dataset then
+		    local dataset_key = format('%s|%s', GetCVar'realmName', UnitFactionGroup'player')
+		    dataset = aux_datasets[dataset_key] or T
+		    aux_datasets[dataset_key] = dataset
+	    end
+	    return dataset
+	end
+end
 
 function M.read(schema, str)
     if schema == 'string' then
@@ -11,9 +25,9 @@ function M.read(schema, str)
     elseif schema == 'number' then
         return tonumber(str)
     elseif type(schema) == 'table' and schema[1] == 'list' then
-        return T.temp-read_list(schema, str)
+        return weak-read_list(schema, str)
     elseif type(schema) == 'table' and schema[1] == 'tuple' then
-        return T.temp-read_tuple(schema, str)
+        return weak-read_tuple(schema, str)
     else
         error('Invalid schema.', 2)
     end
@@ -36,10 +50,10 @@ function M.write(schema, obj)
 end
 
 function read_list(schema, str)
-    if str == '' then return T.acquire() end
+    if str == '' then return T end
     local separator = schema[2]
     local element_type = schema[3]
-    return aux.map(aux.split(str, separator), function(part)
+    return map(split(str, separator), function(part)
         return read(element_type, part)
     end)
 end
@@ -47,16 +61,16 @@ end
 function write_list(schema, list)
     local separator = schema[2]
     local element_type = schema[3]
-    local parts = aux.map(T.temp-aux.copy(list), function(element)
+    local parts = map(temp-copy(list), function(element)
         return write(element_type, element)
     end)
-    return aux.join(parts, separator)
+    return join(parts, separator)
 end
 
 function read_tuple(schema, str)
     local separator = schema[2]
-    local tuple = T.acquire()
-    local parts = T.temp-aux.split(str, separator)
+    local tuple = T
+    local parts = temp-split(str, separator)
     for i = 3, getn(schema) do
         local key, type = next(schema[i])
         tuple[key] = read(type, parts[i - 2])
@@ -66,10 +80,10 @@ end
 
 function write_tuple(schema, tuple)
     local separator = schema[2]
-    local parts = T.temp-T.acquire()
-    for i = 3, getn(schema) do
+    local parts = temp-T
+    for i = 3 , getn(schema) do
         local key, type = next(schema[i])
         tinsert(parts, write(type, tuple[key]))
     end
-    return aux.join(parts, separator)
+    return join(parts, separator)
 end
