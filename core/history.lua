@@ -4,32 +4,42 @@ include 'T'
 include 'aux'
 
 local persistence = require 'aux.util.persistence'
+local info = require 'aux.util.info'
 
 local history_schema = {'tuple', '#', {next_push='number'}, {daily_min_buyout='number'}, {data_points={'list', ';', {'tuple', '@', {value='number'}, {time='number'}}}}}
 
 local value_cache = T
 
+local commonMultipler = 4.44
+local uncommonMultipler = 11
+local rareMultipler = 22.22
+local epicMultiplier = 40
+local recipesMultipler = 8.88
+local tradeGoodsMultipler = 8.88
+local miscMultipler = 8.88
+
+
 do
-	local cache
+	local temp_cache
 	function get_data()
-		if not cache then
+		if not temp_cache then
 			local dataset = persistence.dataset
-			cache = dataset.history or T
-			dataset.history = cache
+			temp_cache = dataset.history or T
+			dataset.history = temp_cache
 		end
-		return cache
+		return temp_cache
 	end
 end
 
 do
-	local cache = 0
+	local temp_cache = 0
 	function get_next_push()
-		if time() > cache then
+		if time() > temp_cache then
 			local date = date('*t')
 			date.hour, date.min, date.sec = 24, 0, 0
-			cache = time(date)
+			temp_cache = time(date)
 		end
-		return cache
+		return temp_cache
 	end
 end
 
@@ -70,6 +80,75 @@ function M.data_points(item_key)
 end
 
 function M.value(item_key)
+	local value = calculate_adamino_max_value(item_key)
+	
+	if value == nil or value <= 0 then
+		value = get_max_seen_ah_value(item_key)
+	end
+
+	if value and value > 0 then
+        return value - 0.1
+    end
+end
+
+function calculate_adamino_max_value(item_key)
+    local item = info.item(item_key)
+	local item_id = _G.aux_item_ids[strlower(item.name)]
+	local vendor_price = _G.aux_merchant_sell[item_id]
+    local item_qual = item.quality
+    local item_class = item.class
+    local item_sub_class = item.subclass
+
+	-- SendChatMessage("item_id: " .. item_id,"SAY" ,"COMMON")
+	-- SendChatMessage("Vendor price: " .. serializeTable(vendor_price) ,"SAY" ,"COMMON");
+    -- SendChatMessage("Item: " .. serializeTable(item) ,"SAY" ,"COMMON")
+    -- SendChatMessage("Item qual: " .. item_qual ,"SAY" ,"COMMON")
+    -- SendChatMessage("Item class: " .. item_class ,"SAY" ,"COMMON")
+    -- SendChatMessage("Item subclass: " .. item_sub_class ,"SAY" ,"COMMON")
+
+    if vendor_price and vendor_price > 0 then
+        if item_qual == 1 then return vendor_price * commonMultipler
+        elseif item_qual == 4 then return vendor_price * epicMultiplier
+        elseif item_class == "Recipe" then return vendor_price * recipesMultipler
+        elseif item_class == "Trade Goods"  then return vendor_price * tradeGoodsMultipler
+        elseif item_class == "Reagent"  then return vendor_price * tradeGoodsMultipler
+        elseif item_sub_class == "Miscellaneous" then return vendor_price * miscMultipler
+        elseif item_qual == 2 then return vendor_price * uncommonMultipler
+        elseif item_qual == 3 then return vendor_price * rareMultipler        
+        end
+    end
+end
+
+function serializeTable(val, name, skipnewlines, depth)
+    skipnewlines = skipnewlines or false
+    depth = depth or 0
+
+    local tmp = string.rep(" ", depth)
+
+    if name then tmp = tmp .. name .. " = " end
+
+    if type(val) == "table" then
+        tmp = tmp .. "{" .. (not skipnewlines and "\n" or "")
+
+        for k, v in pairs(val) do
+            tmp =  tmp .. serializeTable(v, k, skipnewlines, depth + 1) .. "," .. (not skipnewlines and "\n" or "")
+        end
+
+        tmp = tmp .. string.rep(" ", depth) .. "}"
+    elseif type(val) == "number" then
+        tmp = tmp .. tostring(val)
+    elseif type(val) == "string" then
+        tmp = tmp .. string.format("%q", val)
+    elseif type(val) == "boolean" then
+        tmp = tmp .. (val and "true" or "false")
+    else
+        tmp = tmp .. "\"[inserializeable datatype:" .. type(val) .. "]\""
+    end
+
+    return tmp
+end
+
+function get_max_seen_ah_value(item_key)
 	if not value_cache[item_key] or value_cache[item_key].next_push <= time() then
 		local item_record
 		local value = 0
@@ -79,17 +158,6 @@ function M.value(item_key)
 			for _, data_point in item_record.data_points do
 				if data_point.value > value then value = data_point.value end
 			end
-
-			-- local total_weight, weighted_values = 0, temp-T
-			-- for _, data_point in item_record.data_points do
-			-- 	local weight = .99 ^ round((item_record.data_points[1].time - data_point.time) / (60 * 60 * 24))
-			-- 	total_weight = total_weight + weight
-			-- 	tinsert(weighted_values, O('value', data_point.value, 'weight', weight))
-			-- end
-			-- for _, weighted_value in weighted_values do
-			-- 	weighted_value.weight = weighted_value.weight / total_weight
-			-- end
-			-- value = weighted_median(weighted_values)
 		else
 			value = item_record.daily_min_buyout
 		end
@@ -99,7 +167,7 @@ function M.value(item_key)
 end
 
 function M.market_value(item_key)
-	return read_record(item_key).daily_min_buyout
+	return value(item_key)
 end
 
 function weighted_median(list)

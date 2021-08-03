@@ -78,7 +78,6 @@ function merchant_loaded()
 end
 
 function M.merchant_info(item_id)
-	SendChatMessage("Vendor price: " ,"SAY" ,"COMMON");
 	local buy_info
 	if aux_merchant_buy[item_id] then
 		buy_info = temp-persistence.read(merchant_buy_schema, aux_merchant_buy[item_id])

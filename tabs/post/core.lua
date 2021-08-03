@@ -372,88 +372,10 @@ function update_historical_value_button()
     if selected_item then
         local historical_value = history.value(selected_item.key)
 
-        local adaminoMaxPrice = get_adamino_max_value(selected_item.key)
-        -- SendChatMessage("Adamino max value: " .. adaminoMaxPrice ,"SAY" ,"COMMON");
-        
-        -- historical_value_button.amount = historical_value
-        historical_value_button.amount = adaminoMaxPrice
-        historical_value_button:SetText(adaminoMaxPrice and money.to_string(adaminoMaxPrice, true, nil, 3) or '---')
+        historical_value_button.amount = historical_value
+        historical_value_button:SetText(historical_value and money.to_string(historical_value, true, nil, 3) or '---')
     end
 end
-
-function get_adamino_max_value()
-
-    local commonMultipler = 4.44
-    local uncommonMultipler = 11
-    local rareMultipler = 22.22
-    local epicMultiplier = 40
-    local recipesMultipler = 8.88
-    local tradeGoodsMultipler = 8.88
-    local miscMultipler = 8.88
-
-    local vendor_price = selected_item.unit_vendor_price
-    local item = info.item(selected_item.key)
-
-    local item_qual = item.quality
-    local item_class = item.class
-    local item_sub_class = item.subclass
-
-    -- SendChatMessage("Item: " .. serializeTable(item) ,"SAY" ,"COMMON");
-    -- SendChatMessage("Item qual: " .. item_qual ,"SAY" ,"COMMON");
-    -- SendChatMessage("Item class: " .. item_class ,"SAY" ,"COMMON");
-    -- SendChatMessage("Item subclass: " .. item_sub_class ,"SAY" ,"COMMON");
-    -- SendChatMessage("Vendor price: " .. vendor_price ,"SAY" ,"COMMON");
-
-    local value
-
-    if vendor_price and vendor_price > 0 then
-        if item_qual == 1 then value = vendor_price * commonMultipler
-        elseif item_qual == 4 then value = vendor_price * epicMultiplier
-        elseif item_class == "Recipe" then value = vendor_price * recipesMultipler
-        elseif item_class == "Trade Goods"  then value = vendor_price * tradeGoodsMultipler
-        elseif item_class == "Reagent"  then value = vendor_price * tradeGoodsMultipler
-        elseif item_sub_class == "Miscellaneous" then value = vendor_price * miscMultipler
-        elseif item_qual == 2 then value = vendor_price * uncommonMultipler
-        elseif item_qual == 3 then value = vendor_price * rareMultipler        
-        end
-    else
-        value = history.market_value(selected_item.key)        
-    end
-
-    if value and value > 0 then
-        return value - 0.001
-    end
-end
-
-function serializeTable(val, name, skipnewlines, depth)
-    skipnewlines = skipnewlines or false
-    depth = depth or 0
-
-    local tmp = string.rep(" ", depth)
-
-    if name then tmp = tmp .. name .. " = " end
-
-    if type(val) == "table" then
-        tmp = tmp .. "{" .. (not skipnewlines and "\n" or "")
-
-        for k, v in pairs(val) do
-            tmp =  tmp .. serializeTable(v, k, skipnewlines, depth + 1) .. "," .. (not skipnewlines and "\n" or "")
-        end
-
-        tmp = tmp .. string.rep(" ", depth) .. "}"
-    elseif type(val) == "number" then
-        tmp = tmp .. tostring(val)
-    elseif type(val) == "string" then
-        tmp = tmp .. string.format("%q", val)
-    elseif type(val) == "boolean" then
-        tmp = tmp .. (val and "true" or "false")
-    else
-        tmp = tmp .. "\"[inserializeable datatype:" .. type(val) .. "]\""
-    end
-
-    return tmp
-end
-
 
 function update_item(item)
     local settings = read_settings(item.key)
