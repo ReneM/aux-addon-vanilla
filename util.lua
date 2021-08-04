@@ -1,29 +1,18 @@
 module 'aux'
 
-local T = require 'T'
-
-M.immutable = setmetatable(T.acquire(), {
-	__metatable = false,
-	__newindex = pass,
-	__sub = function(_, t)
-		return setmetatable(T.acquire(), T.map('__metatable', false, '__newindex', pass, '__index', t))
+do
+	local mt = {__metatable=false, __newindex=nop, __mode='k'}
+	function mt:__sub(table)
+		local proxy = setmetatable(T, O('__metatable', false, '__newindex', nop, '__index', table))
+		self[proxy] = table
+		return proxy
 	end
-})
-
-function M.assign(t1, t2)
-    for k, v in t2 do
-        if t1[k] == nil then
-            t1[k] = v
-        end
-    end
-    return t1
+	function M.get_wrapper()
+		return setmetatable(T, mt)
+	end
 end
 
-function M.enum(n)
-	if n > 0 then return immutable-{}, enum(n - 1) end
-end
-
-M.select = T.vararg-function(arg)
+M.select = vararg-function(arg)
 	for _ = 1, arg[1] do
 		tremove(arg, 1)
 	end
@@ -36,58 +25,52 @@ end
 
 M.join = table.concat
 
-M.index = T.vararg-function(arg)
-	local t = tremove(arg, 1)
-	for _, v in ipairs(arg) do
-		t = t and t[v]
-	end
-	return t
+function M.range(arg1, arg2)
+	local i, n = arg2 and arg1 or 1, arg2 or arg1
+	if i <= n then return first, range(i + 1, n) end
 end
 
-M.huge = 1/0
+function M.replicate(count, value)
+	if count > 0 then return value, replicate(count - 1, value) end
+end
 
-function M.modified()
+M.index = vararg-function(arg)
+	local t = tremove(arg, 1)
+	for i = 1, getn(arg) do t = t and t[arg[i]] end return t
+end
+
+M.huge = 1.8 * 10 ^ 308
+
+function M.get_modified()
 	return IsShiftKeyDown() or IsControlKeyDown() or IsAltKeyDown()
 end
 
 function M.copy(t)
-	local copy = T.acquire()
-	for k, v in t do
-		copy[k] = v
-	end
+	local copy = T
+	for k, v in t do copy[k] = v end
 	table.setn(copy, getn(t))
 	return setmetatable(copy, getmetatable(t))
 end
 
 function M.size(t)
 	local size = 0
-	for _ in t do
-		size = size + 1
-	end
+	for _ in t do size = size + 1 end
 	return size
 end
 
-function M.key(t, value)
-	for k, v in t do
-		if v == value then
-			return k
-		end
-	end
+function M.key(value, t)
+	for k, v in t do if v == value then return k end end
 end
 
 function M.keys(t)
-	local keys = T.acquire()
-	for k in t do
-		tinsert(keys, k)
-	end
+	local keys = T
+	for k in t do tinsert(keys, k) end
 	return keys
 end
 
 function M.values(t)
-	local values = T.acquire()
-	for _, v in t do
-		tinsert(values, v)
-	end
+	local values = T
+	for _, v in t do tinsert(values, v) end
 	return values
 end
 
@@ -132,9 +115,7 @@ function M.filter(t, predicate)
 end
 
 function M.map(t, f)
-	for k, v in t do
-		t[k] = f(v, k)
-	end
+	for k, v in t do t[k] = f(v, k) end
 	return t
 end
 
@@ -143,7 +124,7 @@ function M.trim(str)
 end
 
 function M.split(str, separator)
-	local parts = T.acquire()
+	local parts = T
 	while true do
 		local start_index = strfind(str, separator, 1, true)
 		if start_index then
@@ -159,7 +140,7 @@ function M.split(str, separator)
 end
 
 function M.tokenize(str)
-	local tokens = T.acquire()
+	local tokens = T
 	for token in string.gfind(str, '%S+') do tinsert(tokens, token) end
 	return tokens
 end
@@ -179,8 +160,8 @@ end
 
 function M.signal()
 	local params
-	return T.vararg-function(arg)
-		T.static(arg)
+	return vararg-function(arg)
+		static(arg)
 		params = arg
 	end, function()
 		return params

@@ -1,50 +1,47 @@
 module 'aux.core.stack'
 
-local T = require 'T'
-local aux = require 'aux'
+include 'T'
+include 'aux'
+
 local info = require 'aux.util.info'
 
 local state
 
-function aux.handle.CLOSE()
-	stop()
-end
-
 function stack_size(slot)
-    local container_item_info = T.temp-info.container_item(unpack(slot))
+    local container_item_info = temp-info.container_item(unpack(slot))
     return container_item_info and container_item_info.count or 0
 end
 
 function charges(slot)
-    local container_item_info = T.temp-info.container_item(unpack(slot))
+    local container_item_info = temp-info.container_item(unpack(slot))
 	return container_item_info and container_item_info.charges
 end
 
 function max_stack(slot)
-	local container_item_info = T.temp-info.container_item(unpack(slot))
+	local container_item_info = temp-info.container_item(unpack(slot))
 	return container_item_info and container_item_info.max_stack
 end
 
 function locked(slot)
-	local container_item_info = T.temp-info.container_item(unpack(slot))
+	local container_item_info = temp-info.container_item(unpack(slot))
 	return container_item_info and container_item_info.locked
 end
 
 function find_item_slot(partial)
-	for slot in info.inventory() do
-		if matching_item(slot, partial) and not aux.eq(slot, state.target_slot) then
+	for slot in info.inventory do
+		if matching_item(slot, partial) and not eq(slot, state.target_slot) then
 			return slot
 		end
 	end
 end
 
 function matching_item(slot, partial)
-	local item_info = T.temp-info.container_item(unpack(slot))
-	return item_info and item_info.item_key == state.item_key and info.auctionable(item_info.tooltip, nil, true) and (not partial or item_info.count < item_info.max_stack)
+	local item_info = temp-info.container_item(unpack(slot))
+	return item_info and item_info.item_key == state.item_key and info.auctionable(item_info.tooltip) and (not partial or item_info.count < item_info.max_stack)
 end
 
 function find_empty_slot()
-	for slot, type in info.inventory() do
+	for slot, type in info.inventory do
 		if type == 1 and not GetContainerItemInfo(unpack(slot)) then
 			return slot
 		end
@@ -52,7 +49,7 @@ function find_empty_slot()
 end
 
 function find_charge_item_slot()
-	for slot in info.inventory() do
+	for slot in info.inventory do
 		if matching_item(slot) and charges(slot) == state.target_size then
 			return slot
 		end
@@ -61,7 +58,7 @@ end
 
 function move_item(from_slot, to_slot, amount, k)
 	if locked(from_slot) or locked(to_slot) then
-		return aux.wait(k)
+		return wait(k)
 	end
 
 	amount = min(max_stack(from_slot) - stack_size(to_slot), stack_size(from_slot), amount)
@@ -71,7 +68,7 @@ function move_item(from_slot, to_slot, amount, k)
 	SplitContainerItem(from_slot[1], from_slot[2], amount)
 	PickupContainerItem(unpack(to_slot))
 
-	return aux.when(function() return stack_size(to_slot) == expected_size end, k)
+	return when(function() return stack_size(to_slot) == expected_size end, k)
 end
 
 function process()
@@ -111,18 +108,18 @@ end
 
 function M.stop()
 	if state then
-		aux.kill_thread(state.thread_id)
+		kill_thread(state.thread_id)
 		local callback, slot = state.callback, state.target_slot
 		slot = slot and matching_item(slot) and slot or nil
 		state = nil
-		do (callback or pass)(slot) end
+		do (callback or nop)(slot) end
 	end
 end
 
 function M.start(item_key, size, callback)
 	stop()
 	state = {
-		thread_id = aux.thread(process),
+		thread_id = thread(process),
 		item_key = item_key,
 		target_size = size,
 		callback = callback,

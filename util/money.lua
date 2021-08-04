@@ -1,7 +1,7 @@
 module 'aux.util.money'
 
-local T = require 'T'
-local aux = require 'aux'
+include 'T'
+include 'aux'
 
 M.GOLD_TEXT = '|cffffd70ag|r'
 M.SILVER_TEXT = '|cffc7c7cfs|r'
@@ -33,8 +33,9 @@ function M.to_string2(money, exact, color)
 	local PART = color .. '.|cff%s%02d' .. FONT_COLOR_CODE_CLOSE
 	local NONE = '|cffa0a0a0' .. TEXT_NONE .. FONT_COLOR_CODE_CLOSE
 
-	if not exact and money >= COPPER_PER_GOLD then
-		money = aux.round(money / COPPER_PER_SILVER) * COPPER_PER_SILVER
+	if not exact and money >= 10000 then
+		-- Round to nearest silver
+		money = floor(money / 100 + .5) * 100
 	end
 	local g, s, c = to_gsc(money)
 
@@ -58,10 +59,20 @@ function M.to_string2(money, exact, color)
 	return str
 end
 
-function M.to_string(money, pad, trim, color, no_color)
+--function M.to_string(params) -- TODO
+--	local gold, silver, copper = to_gsc(params.copper or 0 + )
+--	local settings = set(unpack(arg))
+--end
+
+function M.to_string(money, pad, trim, decimal_points, color, no_color)
 	local is_negative = money < 0
 	money = abs(money)
 	local gold, silver, copper = to_gsc(money)
+
+	-- rounding
+	if decimal_points then
+		copper = tonumber(format('%.' .. decimal_points .. 'f', copper))
+	end
 
 	local gold_text, silver_text, copper_text
 	if no_color then
@@ -72,29 +83,33 @@ function M.to_string(money, pad, trim, color, no_color)
 
 	local text
 	if trim then
-		local parts = T.temp-T.acquire()
+		local parts = temp-T
 		if gold > 0 then
-			tinsert(parts, format_number(gold, false, color) .. gold_text)
+			tinsert(parts, format_number(gold, false, nil, color) .. gold_text)
 		end
 		if silver > 0 then
-			tinsert(parts, format_number(silver, pad, color) .. silver_text)
+			tinsert(parts, format_number(silver, pad, nil, color) .. silver_text)
 		end
 		if copper > 0 or gold == 0 and silver == 0 then
-			tinsert(parts, format_number(copper, pad, color) .. copper_text)
+			tinsert(parts, format_number(copper, pad, decimal_points, color) .. copper_text)
 		end
-		text = aux.join(parts, ' ')
+		text = join(parts, ' ')
 	else
 		if gold > 0 then
-			text = format_number(gold, false, color) .. gold_text .. ' ' .. format_number(silver, pad, color) .. silver_text .. ' ' .. format_number(copper, pad, color) .. copper_text
+			text = format_number(gold, false, nil, color) .. gold_text .. ' ' .. format_number(silver, pad, nil, color) .. silver_text .. ' ' .. format_number(copper, pad, decimal_points, color) .. copper_text
 		elseif silver > 0 then
-			text = format_number(silver, false, color) .. silver_text .. ' ' .. format_number(copper, pad, color) .. copper_text
+			text = format_number(silver, false, nil, color) .. silver_text .. ' ' .. format_number(copper, pad, decimal_points, color) .. copper_text
 		else
-			text = format_number(copper, false, color) .. copper_text
+			text = format_number(copper, false, decimal_points, color) .. copper_text
 		end
 	end
 
 	if is_negative then
-		text = (color and color'-' or '-') .. text
+		if color then
+			text = color .. '-' .. FONT_COLOR_CODE_CLOSE .. text
+		else
+			text = '-' .. text
+		end
 	end
 
 	return text
@@ -106,13 +121,16 @@ function M.from_string(value)
 		return number * COPPER_PER_GOLD
 	end
 
+	-- remove any colors
 	value = gsub(gsub(strlower(value), '|c%x%x%x%x%x%x%x%x', ''), FONT_COLOR_CODE_CLOSE, '')
 
-	local gold = tonumber(aux.select(3, strfind(value, '(%d*%.?%d+)g')))
-	local silver = tonumber(aux.select(3, strfind(value, '(%d*%.?%d+)s')))
-	local copper = tonumber(aux.select(3, strfind(value, '(%d*%.?%d+)c')))
+	-- extract gold/silver/copper values
+	local gold = tonumber(select(3, strfind(value, '(%d*%.?%d+)g')))
+	local silver = tonumber(select(3, strfind(value, '(%d*%.?%d+)s')))
+	local copper = tonumber(select(3, strfind(value, '(%d*%.?%d+)c')))
 	if not gold and not silver and not copper then return end
 
+	-- test that there are no extra characters (other than spaces)
 	value = gsub(value, '%d*%.?%d+g', '', 1)
 	value = gsub(value, '%d*%.?%d+s', '', 1)
 	value = gsub(value, '%d*%.?%d+c', '', 1)
@@ -121,8 +139,9 @@ function M.from_string(value)
 	return from_gsc(gold or 0, silver or 0, copper or 0)
 end
 
-function M.format_number(num, pad, color)
-	num = format('%0' .. (pad and 2 or 0) .. 'd', num)
+function M.format_number(num, pad, decimal_padding, color)
+	local padding = pad and 2 + (decimal_padding and decimal_padding + 1 or 0) or 0
+	num = format('%0' .. padding .. '.0' .. (decimal_padding or 0) .. 'f', num)
 	if color then
 		return color .. num .. FONT_COLOR_CODE_CLOSE
 	else

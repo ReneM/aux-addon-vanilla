@@ -41,17 +41,13 @@ The most advanced auction house addOn for the 1.12 client with some features mor
 
 ## Slash Commands
 ### General
-**/aux** (Lists the settings)<br/>
-**/aux scale _factor_** (Scales the aux GUI by _factor_)<br/>
 **/aux ignore owner** (Disables waiting for owner names when scanning. Recommended)<br/>
-**/aux post bid** (Adds a bid price listing to the post tab)<br/>
-**/aux crafting cost** (Toggles the crafting price information)<br/>
-**/aux post duration _hours_** (Sets the default auction duration to _2_/_8_/_24_ hours)<br/>
 ### Tooltip
 **/aux tooltip value**<br/>
 **/aux tooltip daily**<br/>
-**/aux tooltip disenchant value**<br/>
 **/aux tooltip disenchant distribution**<br/>
+**/aux tooltip disenchant value**<br/>
+**/aux tooltip disenchant source**<br/>
 **/aux tooltip vendor buy**<br/>
 **/aux tooltip vendor sell**<br/>
 
@@ -76,12 +72,12 @@ Furthermore
 - Right-clicking item links will start a search.
 
 #### Search Results
-![Alt text](http://i.imgur.com/hI6ODqM.png)
+![Alt text](http://i.imgur.com/EQ8SILy.png)
 - Bid prices for your own active bids are colored in green.
 - Bid prices for other auctions with an active bid are colored in orange.
 
 #### Saved Searches
-![Alt text](http://i.imgur.com/dICDnxR.png)
+![Alt text](http://i.imgur.com/jHmGueI.png)
 - When hovering over an entry the tooltip shows a longer and more nicely formatted version.
 - Left-click on an entry will start a search.
 - Right-click on an entry will show a menu with various options, including toggling Auto Buy.
@@ -89,25 +85,25 @@ Furthermore
 - Shift-right-click on an entry will add a search to the existing query in the search box.
 
 #### Filter Builder
-![Alt text](http://i.imgur.com/8hilZc9.png)
+![Alt text](http://i.imgur.com/coXD3H5.png)
 While it is faster to type filters directly into the search box this sub-tab serves as a tutorial to learn how to formulate queries.
 The filters on the left side are Blizzard filters which may reduce the number of pages to be scanned and those on the right side are post filters which do not affect the scan time but can be combined with logical operators to formulate very complex filters.
 ### Post
-![Alt text](http://i.imgur.com/otzOT2I.png)
+![Alt text](http://i.imgur.com/eydxjoH.png)
 - When entering prices **g**, **s** and **c** denote gold, silver and copper respectively.
 - A price value without explicit denotations will count as gold. (e.g., 10.5 = 10g50s)
 - Price values can contain decimals. (e.g., 1.5g = 1g50s)
 - Right-clicking an item in the inventory listing will start a search.
-- Right-clicking a bag item will select it in the listing.
-- In the listing of bids/buyouts a red price is undercutting stack/unit price.
-- Clicking an entry in the in the listings of bids/buyouts of existing auctions will undercut with your bid stack/buyout unit price.
-- Double-click in the bids/buyouts listings will also match the stack size.
+- Dragging an inventory item to the item slot in the top or right-clicking it will select it in the listing.
+- In the listing of existing auctions a red price is undercutting both the unit and the stack price you have selected, an orange one only the unit and a yellow one only the stack price.
+- Clicking a bid/buyout price in the listing of existing auctions will undercut with your bid/buyout. Left click will undercut the unit and right-click the stack price.
+- Clicking a stack size in the listing of existing auctions will match it for your own auction.
 
 ### Auctions
-![Alt text](http://i.imgur.com/6HjaIo2.png)
+![Alt text](http://i.imgur.com/3oZUtw8.png)
 
 ### Bids
-![Alt text](http://i.imgur.com/NOjPKNW.png)
+![Alt text](http://i.imgur.com/wrYwgZS.png)
 
 ## Search Filters
 AddOns do not have any additional Blizzard filters available to them beyond the ones in the default auction house interface, nor do they have any other ways to combine them.
@@ -134,22 +130,19 @@ For using a tooltip filter as the first filter part there is an explicit **toolt
 
 Here are some queries I use myself for illustration:
 
-**or/and2/profit/5g/percent/60/and3/bid-profit/5g/bid-percent/60/left/30m**<br/>
-This filter will search the whole auction house for auctions either with a buyout price of 5g or more below market value and 60% or less of the market value or a bid price for which the same is true and in addition only 30m or less remaining.
-
-**wrangler's wristbands/exact/or2/and2/+3 agility/+3 stamina/+5 stamina/price/1g**<br/>
-This will search for wrangler's wristband with 3/3 monkey or 5 stam suffixes for at most 1g buyout price.
+**or/and2/buy-profit/5g/buy-pct/60/and3/bid-profit/5g/bid-pct/60/left/30m**<br/>
+This filter will search the whole auction house for auctions either with a buyout price of 5g or more higher than the market value and 60% or less of the market value or a bid price for which the same is true and in addition only 30m or less remaining.
 
 **recipe/usable/not/libram**<br/>
 This will scan for usable recipes and exclude those with "libram" in the tooltip (i.e., librams)
 
-**armor/cloth/50/intellect/stamina**<br/>
+**armor/cloth/50/and/intellect/stamina**<br/>
 This will scan the auction house for cloth armor which has a requirement of at least lvl 50 as well both intellect and stamina stats.
 
 ## Historical Value
 
 aux condenses the prices you've scanned during a day (midnight to midnight) into a single value, similarly to retail Auctioneer's "stat-simple" module.
-This daily value is calculated as the minimum buyout of the day which in practice gives a similar enough value to that of retail TSM while using much less memory.
+This daily value is calculated as the minimum buyout of the day, increased by 15% if lower than the highest price of the day, which in practice gives a very similar value to that of retail TSM while using much less memory.
 Limiting the memory usage is important because like Auctioneer and unlike TSM aux is using a day based instead of scan based interval and thus has to store the daily progress in the savedvariables.
 Finally these daily values are collected in a list of the last 11 of them from which the market value is taken as the median. The values are weighted by their age but it doesn't have a large effect unless they're older than a month.
 

@@ -1,6 +1,7 @@
 module 'aux.util.sort'
 
-local T = require 'T'
+include 'T'
+include 'aux'
 
 M.EQ = 0
 M.LT = 1
@@ -16,7 +17,7 @@ function M.compare(a, b, desc)
     end
 end
 
-M.multi_lt = T.vararg-function(arg)
+M.multi_lt = vararg-function(arg)
 	for i = 1, getn(arg), 2 do
         if arg[i] and arg[i + 1] and arg[i] ~= arg[i + 1] then
             return arg[i] < arg[i + 1]

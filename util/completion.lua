@@ -1,6 +1,8 @@
 module 'aux.util.completion'
 
-local aux = require 'aux'
+include 'T'
+include 'aux'
+
 local filter_util = require 'aux.util.filter'
 
 function M:complete_filter()
@@ -10,7 +12,7 @@ function M:complete_filter()
 
 	local filter_string = this:GetText()
 
-	local completed_filter_string = aux.select(3, strfind(filter_string, '([^;]*)/[^/;]*$'))
+	local completed_filter_string = select(3, strfind(filter_string, '([^;]*)/[^/;]*$'))
 	local _, suggestions = filter_util.query(completed_filter_string)
 
 	local start_index, _, current_modifier = strfind(filter_string, '([^/;]*)$')
@@ -25,7 +27,7 @@ function M:complete_filter()
 	end
 end
 
-function M.complete(candidates)
+function M.complete(options)
 	return function(self)
 		if IsControlKeyDown() then -- TODO problem is ctrl-v, maybe find a better solution
 			return
@@ -33,10 +35,9 @@ function M.complete(candidates)
 
 		local text = self:GetText()
 
-		local t = candidates()
-		for i = 1, getn(t) do
-			if strsub(strupper(t[i]), 1, strlen(text)) == strupper(text) then
-				self:SetText(strlower(t[i]))
+		for _, item_name in ipairs(options()) do
+			if strsub(strupper(item_name), 1, strlen(text)) == strupper(text) then
+				self:SetText(strlower(item_name))
 				self:HighlightText(strlen(text), -1)
 				return
 			end

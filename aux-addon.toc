@@ -1,10 +1,11 @@
 ## Interface: 11200
-## Author: shirsig
 ## Title: aux
-## Notes: Auction House replacement
-## SavedVariables: aux
+## Description: Auction House AddOn
+## SavedVariablesPerCharacter: aux_auto_buy_filters, aux_tooltip_value, aux_tooltip_daily, aux_tooltip_vendor_buy, aux_tooltip_vendor_sell, aux_tooltip_disenchant_value, aux_tooltip_disenchant_distribution, aux_tooltip_disenchant_source
+## SavedVariables: aux_datasets, aux_items, aux_item_ids, aux_auctionable_items, aux_merchant_buy, aux_merchant_sell, aux_characters, aux_recent_searches, aux_favorite_searches, aux_ignore_owner, aux_price_per_unit
 
-libs\package.lua
+libs\inspect.lua
+libs\module.lua
 libs\T.lua
 
 aux-addon.lua
@@ -13,22 +14,23 @@ control.lua
 color.lua
 gui\core.lua
 frame.lua
+
 util\persistence.lua
 util\sort.lua
 util\money.lua
-core\cache.lua
 util\info.lua
+util\filter.lua
+util\scan.lua
+util\completion.lua
+
+core\cache.lua
 core\history.lua
 core\disenchant.lua
-util\filter.lua
-util\completion.lua
 core\slash.lua
 core\scan.lua
-util\scan.lua
 core\stack.lua
 core\post.lua
 core\tooltip.lua
-core\shortcut.lua
 
 gui\listing.lua
 gui\auction_listing.lua
@@ -48,7 +50,5 @@ tabs\auctions\frame.lua
 
 tabs\bids\core.lua
 tabs\bids\frame.lua
-
-core\crafting.lua
 
 
