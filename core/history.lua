@@ -87,7 +87,7 @@ function M.value(item_key)
 	end
 
 	if value and value > 0 then
-        return value - 0.1
+        return value - 1
     end
 end
 
